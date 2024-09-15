@@ -1,16 +1,17 @@
 #include<SFML/Graphics.hpp>
 #include<time.h>
 #include<vector>
-#include<memory> // For smart pointers
+#include<memory> 
+#include<sstream>  
 
 using namespace sf;
 
-// Base class for all game objects (using polymorphism)
+// Base class for all game objects 
 class GameObject {
 public:
-    virtual void draw(RenderWindow& window) = 0;  // Pure virtual function for drawing
-    virtual void update() = 0;  // Pure virtual function for updating
-    virtual ~GameObject() {}  // Virtual destructor for proper cleanup of derived classes
+    virtual void draw(RenderWindow& window) = 0;  
+    virtual void update() = 0;  
+    virtual ~GameObject() {}  
 };
 
 // Derived class for the player
@@ -23,13 +24,16 @@ public:
     const int windowHeight = 533;
     const int windowWidth = 400;
 
+    int highestY;  // Track the highest point the player has reached
+
     Player() {
         texture.loadFromFile("C:/Users/sosko/Downloads/doodle.png");
         sprite.setTexture(texture);
         x = 100;
-        y = 100;
+        y = 400;  
         dx = 0;
         dy = 0;
+        highestY = y;  
     }
 
     void update() override {
@@ -38,17 +42,16 @@ public:
         if (Keyboard::isKeyPressed(Keyboard::Left)) x -= 3;
 
         // Apply gravity
-        dy += 0.2f;  // Gravity makes the player fall
+        dy += 0.2f;  
         y += dy;
 
         // Wrap around screen horizontally
         if (x > windowWidth) x = 0;
         if (x < 0) x = windowWidth;
 
-        // Reset if player falls below screen
-        if (y > windowHeight) {
-            y = 100;  // Reset player
-            dy = 0;
+        // Update the highestY only if the player moves higher
+        if (y < highestY) {
+            highestY = y;
         }
     }
 
@@ -70,7 +73,7 @@ public:
     }
 
     void bounce() {
-        dy = -10;  // Bounce upwards
+        dy = -10;  
     }
 };
 
@@ -97,7 +100,7 @@ public:
         window.draw(sprite);
     }
 
-    // Respawn platform at the top of the screen when it falls below the bottom
+    
     void respawn() {
         x = rand() % 400;
         y = 0;
@@ -112,19 +115,41 @@ int main()
 {
     srand(time(0));
 
-    RenderWindow app(VideoMode(400, 533), "Doodle Jump with Polymorphism");
+    RenderWindow app(VideoMode(400, 533), "Doodle Jump with Points System");
     app.setFramerateLimit(60);
 
     // Load background texture
     Texture backgroundTexture;
     backgroundTexture.loadFromFile("C:/Users/sosko/Downloads/background.png");
 
-    // Create two background sprites to create the endless scrolling effect
+    // Create two background sprites for seamless scrolling
     Sprite backgroundSprite1(backgroundTexture);
     Sprite backgroundSprite2(backgroundTexture);
     backgroundSprite2.setPosition(0, -533);  // Position the second background above the first
 
-    
+    // Load font for displaying the score
+    Font font;
+    if (!font.loadFromFile("C:/Windows/Fonts/Arial.ttf")) {
+        return -1;  // Handle font loading error
+    }
+
+    // Create a text object for displaying the score
+    Text scoreText;
+    scoreText.setFont(font);
+    scoreText.setCharacterSize(24);
+    scoreText.setFillColor(Color::Black);  // Set text color to black
+    scoreText.setPosition(10, 10);  // Position the score text at the top-left corner
+
+    // Create game over text to display final score
+    Text gameOverText;
+    gameOverText.setFont(font);
+    gameOverText.setCharacterSize(24);  // Reduced size so the full message fits
+    gameOverText.setFillColor(Color::Red);
+
+    int points = 0;  // Track the player's points (based on how high they go)
+    bool gameOver = false;  // Flag to track if the game is over
+
+    // Container for all game objects (player and platforms)
     std::vector<std::unique_ptr<GameObject>> gameObjects;
 
     // Add player to the game object container
@@ -132,7 +157,7 @@ int main()
     gameObjects.push_back(std::unique_ptr<GameObject>(player));
 
     // Add platforms to the game object container
-    std::vector<Platform*> platforms;  
+    std::vector<Platform*> platforms;  // Keep track of platforms for collision detection
     for (int i = 0; i < 10; i++) {
         Platform* platform = new Platform();
         gameObjects.push_back(std::unique_ptr<GameObject>(platform));
@@ -147,53 +172,86 @@ int main()
                 app.close();
         }
 
-        // Update all game objects
-        for (auto& obj : gameObjects) {
-            obj->update();  // Polymorphic call to update method
-        }
-
-        // Check for player-platform collisions and make the player bounce
-        for (auto& platform : platforms) {
-            if (player->isOnPlatform(platform->getBounds())) {
-                player->bounce();  // Bounce the player if they are on a platform
+        if (!gameOver) {
+            // Update all game objects
+            for (auto& obj : gameObjects) {
+                obj->update();  // Polymorphic call to update method
             }
-        }
 
-        // Simulate camera movement and platform respawn
-        if (player->y < 200) {
-            // Shift the platforms down as the player goes up, simulating the camera following the player
-            float shiftAmount = 200 - player->y;
+            // Check for player-platform collisions and make the player bounce
             for (auto& platform : platforms) {
-                platform->y += shiftAmount;  
-                if (platform->y > 533) {
-                    platform->respawn();  
+                if (player->isOnPlatform(platform->getBounds())) {
+                    player->bounce();  // Bounce the player if they are on a platform
                 }
             }
 
-            // Move the backgrounds down to simulate endless scrolling
-            backgroundSprite1.move(0, shiftAmount);
-            backgroundSprite2.move(0, shiftAmount);
+            // Simulate camera movement and platform respawn
+            if (player->y < 200) {
+                // Shift the platforms down as the player goes up, simulating the camera following the player
+                float shiftAmount = 200 - player->y;
+                for (auto& platform : platforms) {
+                    platform->y += shiftAmount;  // Move platforms down when player moves up
+                    if (platform->y > 533) {
+                        platform->respawn();  // Respawn platform if it moves off the bottom
+                    }
+                }
 
-            // If a background moves completely off-screen, reposition it above the other
-            if (backgroundSprite1.getPosition().y >= 533) {
-                backgroundSprite1.setPosition(0, backgroundSprite2.getPosition().y - 533);
-            }
-            if (backgroundSprite2.getPosition().y >= 533) {
-                backgroundSprite2.setPosition(0, backgroundSprite1.getPosition().y - 533);
+                // Move the backgrounds down to simulate endless scrolling
+                backgroundSprite1.move(0, shiftAmount);
+                backgroundSprite2.move(0, shiftAmount);
+
+                // If a background moves completely off-screen, reposition it above the other
+                if (backgroundSprite1.getPosition().y >= 533) {
+                    backgroundSprite1.setPosition(0, backgroundSprite2.getPosition().y - 533);
+                }
+                if (backgroundSprite2.getPosition().y >= 533) {
+                    backgroundSprite2.setPosition(0, backgroundSprite1.getPosition().y - 533);
+                }
+
+                player->y = 200;  // Keep player at fixed camera height while the world moves down
+
+                // Update points based on the player's highest Y position
+                points = abs(400 - player->highestY);  // Calculate score based on how high player moves
             }
 
-            player->y = 200;  // Keep player at fixed camera height while the world moves down
+            // Check if player has fallen off the screen
+            if (player->y > player->windowHeight) {
+                gameOver = true;  // Set game over flag to true
+                std::stringstream gameOverStream;
+                gameOverStream << "Game Over! Final Score: " << points;
+                gameOverText.setString(gameOverStream.str());
+
+                // Center the game over text
+                FloatRect textRect = gameOverText.getLocalBounds();
+                gameOverText.setOrigin(textRect.width / 2, textRect.height / 2);
+                gameOverText.setPosition(app.getSize().x / 2, app.getSize().y / 2);
+            }
+
+            // Update the score text
+            std::stringstream ss;
+            ss << "Score: " << points;
+            scoreText.setString(ss.str());
         }
 
         // Draw everything
         app.clear();
-        // Draw both background sprites to create the looping effect
-        app.draw(backgroundSprite1);
-        app.draw(backgroundSprite2);
+        if (!gameOver) {
+            // Draw both background sprites to create the looping effect
+            app.draw(backgroundSprite1);
+            app.draw(backgroundSprite2);
 
-        for (auto& obj : gameObjects) {
-            obj->draw(app);  // Polymorphic call to draw method
+            for (auto& obj : gameObjects) {
+                obj->draw(app);  // Polymorphic call to draw method
+            }
+
+            // Draw the score
+            app.draw(scoreText);
         }
+        else {
+            // Draw the final score after game over
+            app.draw(gameOverText);
+        }
+
         app.display();
     }
 
