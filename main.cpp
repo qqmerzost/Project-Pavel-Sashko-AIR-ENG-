@@ -1,17 +1,17 @@
 #include<SFML/Graphics.hpp>
 #include<time.h>
 #include<vector>
-#include<memory> 
-#include<sstream>  
+#include<memory> // For smart pointers
+#include<sstream>  // For converting score to string
 
 using namespace sf;
 
-// Base class for all game objects 
+// Base class for all game objects (using polymorphism)
 class GameObject {
 public:
-    virtual void draw(RenderWindow& window) = 0;  
-    virtual void update() = 0;  
-    virtual ~GameObject() {}  
+    virtual void draw(RenderWindow& window) = 0;  // Pure virtual function for drawing
+    virtual void update() = 0;  // Pure virtual function for updating
+    virtual ~GameObject() {}  // Virtual destructor for proper cleanup of derived classes
 };
 
 // Derived class for the player
@@ -26,14 +26,14 @@ public:
 
     int highestY;  // Track the highest point the player has reached
 
-    Player() {
+    Player(int startY) {  // Start with a custom Y position
         texture.loadFromFile("C:/Users/sosko/Downloads/doodle.png");
         sprite.setTexture(texture);
         x = 100;
-        y = 400;  
+        y = startY;  // Start player slightly above the first platform
         dx = 0;
         dy = 0;
-        highestY = y;  
+        highestY = y;  // Initialize highestY to the starting position
     }
 
     void update() override {
@@ -42,7 +42,7 @@ public:
         if (Keyboard::isKeyPressed(Keyboard::Left)) x -= 3;
 
         // Apply gravity
-        dy += 0.2f;  
+        dy += 0.2f;  // Gravity makes the player fall
         y += dy;
 
         // Wrap around screen horizontally
@@ -73,7 +73,7 @@ public:
     }
 
     void bounce() {
-        dy = -10;  
+        dy = -10;  // Bounce upwards
     }
 };
 
@@ -100,7 +100,7 @@ public:
         window.draw(sprite);
     }
 
-    
+    // Respawn platform at the top of the screen when it falls below the bottom
     void respawn() {
         x = rand() % 400;
         y = 0;
@@ -149,12 +149,10 @@ int main()
     int points = 0;  // Track the player's points (based on how high they go)
     bool gameOver = false;  // Flag to track if the game is over
 
+    float cumulativeShift = 0;  // Track how much the camera (world) has shifted
+
     // Container for all game objects (player and platforms)
     std::vector<std::unique_ptr<GameObject>> gameObjects;
-
-    // Add player to the game object container
-    Player* player = new Player();
-    gameObjects.push_back(std::unique_ptr<GameObject>(player));
 
     // Add platforms to the game object container
     std::vector<Platform*> platforms;  // Keep track of platforms for collision detection
@@ -163,6 +161,11 @@ int main()
         gameObjects.push_back(std::unique_ptr<GameObject>(platform));
         platforms.push_back(platform);
     }
+
+    // Start player slightly above the first platform
+    int firstPlatformY = platforms[0]->y;  // Y position of the first platform
+    Player* player = new Player(firstPlatformY - 50);  // Spawn player slightly above the first platform
+    gameObjects.push_back(std::unique_ptr<GameObject>(player));
 
     while (app.isOpen())
     {
@@ -189,6 +192,8 @@ int main()
             if (player->y < 200) {
                 // Shift the platforms down as the player goes up, simulating the camera following the player
                 float shiftAmount = 200 - player->y;
+                cumulativeShift += shiftAmount;  // Track the total camera shift
+
                 for (auto& platform : platforms) {
                     platform->y += shiftAmount;  // Move platforms down when player moves up
                     if (platform->y > 533) {
@@ -210,8 +215,8 @@ int main()
 
                 player->y = 200;  // Keep player at fixed camera height while the world moves down
 
-                // Update points based on the player's highest Y position
-                points = abs(400 - player->highestY);  // Calculate score based on how high player moves
+                // Update points based on the cumulative shift
+                points = static_cast<int>(cumulativeShift);  // Set score based on cumulative shift
             }
 
             // Check if player has fallen off the screen
