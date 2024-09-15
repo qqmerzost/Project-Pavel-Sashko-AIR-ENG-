@@ -151,200 +151,192 @@ public:
     }
 };
 
-int main()
-{
-    srand(time(0));
-
-    RenderWindow app(VideoMode(400, 533), "Doodle Jump with Points and Coins");
-    app.setFramerateLimit(60);
-
-    // Load background texture
+// Main Game Class
+class Game {
+private:
+    RenderWindow app;
     Texture backgroundTexture;
-    backgroundTexture.loadFromFile("C:/Users/sosko/Downloads/background.png");
-
-    // Create two background sprites for seamless scrolling
-    Sprite backgroundSprite1(backgroundTexture);
-    Sprite backgroundSprite2(backgroundTexture);
-    backgroundSprite2.setPosition(0, -533);  // Position the second background above the first
-
-    // Load font for displaying the score and coin count
+    Sprite backgroundSprite1, backgroundSprite2;
     Font font;
-    if (!font.loadFromFile("C:/Windows/Fonts/Arial.ttf")) {
-        return -1;  // Handle font loading error
-    }
+    Text scoreText, coinText, gameOverText;
+    int points = 0;
+    int coinsCollected = 0;
+    bool gameOver = false;
+    float cumulativeShift = 0;
+    int platformCounter = 0;
 
-    // Create a text object for displaying the score
-    Text scoreText;
-    scoreText.setFont(font);
-    scoreText.setCharacterSize(24);
-    scoreText.setFillColor(Color::Black);  // Set text color to black
-    scoreText.setPosition(10, 10);  // Position the score text at the top-left corner
-
-    // Create a text object for displaying the coin count
-    Text coinText;
-    coinText.setFont(font);
-    coinText.setCharacterSize(24);
-    coinText.setFillColor(Color::Black);  // Set text color to black
-    coinText.setPosition(10, 40);  // Position the coin count text below the score
-
-    // Create game over text to display final score and coins
-    Text gameOverText;
-    gameOverText.setFont(font);
-    gameOverText.setCharacterSize(24);  // Reduced size so the full message fits
-    gameOverText.setFillColor(Color::Red);
-
-    int points = 0;  // Track the player's points (based on how high they go)
-    int coinsCollected = 0;  // Track the number of collected coins
-    bool gameOver = false;  // Flag to track if the game is over
-
-    float cumulativeShift = 0;  // Track how much the camera (world) has shifted
-    int platformCounter = 0;  // Counter to track platforms and spawn coins every 20th platform
-
-    // Container for all game objects (player, platforms, coins)
+    Player* player;
+    Coin* coin;
+    std::vector<Platform*> platforms;
     std::vector<std::unique_ptr<GameObject>> gameObjects;
 
-    // Start player at a fixed Y position
-    int playerStartY = 400;
-    Player* player = new Player(playerStartY);  // Spawn player at a fixed height
-    gameObjects.push_back(std::unique_ptr<GameObject>(player));
+public:
+    Game() : app(VideoMode(400, 533), "Doodle Jump with Points and Coins") {
+        app.setFramerateLimit(60);
 
-    // Add platforms to the game object container
-    std::vector<Platform*> platforms;  // Keep track of platforms for collision detection
+        // Load background texture
+        backgroundTexture.loadFromFile("C:/Users/sosko/Downloads/background.png");
+        backgroundSprite1.setTexture(backgroundTexture);
+        backgroundSprite2.setTexture(backgroundTexture);
+        backgroundSprite2.setPosition(0, -533);
 
-    // Place the first platform just below the player
-    Platform* firstPlatform = new Platform();
-    firstPlatform->y = playerStartY + 50;  // 50 pixels below the player
-    platforms.push_back(firstPlatform);
-    gameObjects.push_back(std::unique_ptr<GameObject>(firstPlatform));
+        // Load font
+        font.loadFromFile("C:/Windows/Fonts/Arial.ttf");
 
-    // Add the rest of the platforms randomly
-    for (int i = 1; i < 10; i++) {
-        Platform* platform = new Platform();
-        gameObjects.push_back(std::unique_ptr<GameObject>(platform));
-        platforms.push_back(platform);
+        // Initialize texts
+        scoreText.setFont(font);
+        scoreText.setCharacterSize(24);
+        scoreText.setFillColor(Color::Black);
+        scoreText.setPosition(10, 10);
+
+        coinText.setFont(font);
+        coinText.setCharacterSize(24);
+        coinText.setFillColor(Color::Black);
+        coinText.setPosition(10, 40);
+
+        gameOverText.setFont(font);
+        gameOverText.setCharacterSize(24);
+        gameOverText.setFillColor(Color::Red);
+
+        // Initialize player and coin
+        player = new Player(400);
+        gameObjects.push_back(std::unique_ptr<GameObject>(player));
+
+        coin = new Coin();
+        gameObjects.push_back(std::unique_ptr<GameObject>(coin));
+
+        // Initialize platforms
+        Platform* firstPlatform = new Platform();
+        firstPlatform->y = player->y + 50;  // Spawn first platform just below the player
+        platforms.push_back(firstPlatform);
+        gameObjects.push_back(std::unique_ptr<GameObject>(firstPlatform));
+
+        for (int i = 1; i < 10; i++) {
+            Platform* platform = new Platform();
+            platforms.push_back(platform);
+            gameObjects.push_back(std::unique_ptr<GameObject>(platform));
+        }
     }
 
-    // Add a coin to the game
-    Coin* coin = new Coin();
-    gameObjects.push_back(std::unique_ptr<GameObject>(coin));
+    void run() {
+        while (app.isOpen()) {
+            handleEvents();
+            if (!gameOver) {
+                update();
+            }
+            render();
+        }
+    }
 
-    while (app.isOpen())
-    {
+private:
+    void handleEvents() {
         Event e;
         while (app.pollEvent(e)) {
-            if (e.type == Event::Closed)
+            if (e.type == Event::Closed) {
                 app.close();
+            }
+        }
+    }
+
+    void update() {
+        // Update all game objects
+        for (auto& obj : gameObjects) {
+            obj->update();
         }
 
-        if (!gameOver) {
-            // Update all game objects
-            for (auto& obj : gameObjects) {
-                obj->update();  // Polymorphic call to update method
+        // Check for player-platform collisions
+        for (auto& platform : platforms) {
+            if (player->isOnPlatform(platform->getBounds())) {
+                player->bounce();
             }
+        }
 
-            // Check for player-platform collisions and make the player bounce
+        // Check for coin collection
+        if (player->isCollectingCoin(coin->getBounds())) {
+            coinsCollected++;
+            coin->respawnAtPlatform(rand() % 400, rand() % 533);
+        }
+
+        // Simulate camera movement
+        if (player->y < 200) {
+            float shiftAmount = 200 - player->y;
+            cumulativeShift += shiftAmount;
+
             for (auto& platform : platforms) {
-                if (player->isOnPlatform(platform->getBounds())) {
-                    player->bounce();  // Bounce the player if they are on a platform
-                }
-            }
-
-            // Check if player collects the coin
-            if (player->isCollectingCoin(coin->getBounds())) {
-                coinsCollected++;  // Increment the coin count
-                coin->respawnAtPlatform(rand() % 400, rand() % 533);  // Respawn the coin after collection
-            }
-
-            // Simulate camera movement and platform respawn
-            if (player->y < 200) {
-                // Shift the platforms and coins down as the player goes up
-                float shiftAmount = 200 - player->y;
-                cumulativeShift += shiftAmount;  // Track the total camera shift
-
-                for (auto& platform : platforms) {
-                    platform->y += shiftAmount;  // Move platforms down when player moves up
-                    if (platform->y > 533) {
-                        platformCounter++;  // Increment the platform counter
-                        platform->respawn();  // Respawn platform if it moves off the bottom
-
-                        // Every 20th platform spawns a coin
-                        if (platformCounter % 20 == 0) {
-                            coin->respawnAtPlatform(platform->x, platform->y);
-                        }
+                platform->y += shiftAmount;
+                if (platform->y > 533) {
+                    platformCounter++;
+                    platform->respawn();
+                    if (platformCounter % 20 == 0) {
+                        coin->respawnAtPlatform(platform->x, platform->y);
                     }
                 }
-
-                // Move the coin as well
-                coin->y += shiftAmount;
-                if (coin->y > 533) {
-                    coin->respawnAtPlatform(rand() % 400, rand() % 533);  // Respawn the coin if it moves off the bottom
-                }
-
-                // Move the backgrounds down to simulate endless scrolling
-                backgroundSprite1.move(0, shiftAmount);
-                backgroundSprite2.move(0, shiftAmount);
-
-                // If a background moves completely off-screen, reposition it above the other
-                if (backgroundSprite1.getPosition().y >= 533) {
-                    backgroundSprite1.setPosition(0, backgroundSprite2.getPosition().y - 533);
-                }
-                if (backgroundSprite2.getPosition().y >= 533) {
-                    backgroundSprite2.setPosition(0, backgroundSprite1.getPosition().y - 533);
-                }
-
-                player->y = 200;  // Keep player at fixed camera height while the world moves down
-
-                // Update points based on the cumulative shift
-                points = static_cast<int>(cumulativeShift);  // Set score based on cumulative shift
             }
 
-            // Check if player has fallen off the screen
-            if (player->y > player->windowHeight) {
-                gameOver = true;  // Set game over flag to true
-
-                // Display final score and coins collected in the game-over text
-                std::stringstream gameOverStream;
-                gameOverStream << "Game Over!\nFinal Score: " << points << "\nCoins Collected: " << coinsCollected;
-                gameOverText.setString(gameOverStream.str());
-
-                // Center the game over text
-                FloatRect textRect = gameOverText.getLocalBounds();
-                gameOverText.setOrigin(textRect.width / 2, textRect.height / 2);
-                gameOverText.setPosition(app.getSize().x / 2, app.getSize().y / 2);
+            coin->y += shiftAmount;
+            if (coin->y > 533) {
+                coin->respawnAtPlatform(rand() % 400, rand() % 533);
             }
 
-            // Update the score and coin count text
-            std::stringstream ss;
-            ss << "Score: " << points;
-            scoreText.setString(ss.str());
+            backgroundSprite1.move(0, shiftAmount);
+            backgroundSprite2.move(0, shiftAmount);
 
-            std::stringstream coinStream;
-            coinStream << "Coins: " << coinsCollected;
-            coinText.setString(coinStream.str());
+            if (backgroundSprite1.getPosition().y >= 533) {
+                backgroundSprite1.setPosition(0, backgroundSprite2.getPosition().y - 533);
+            }
+            if (backgroundSprite2.getPosition().y >= 533) {
+                backgroundSprite2.setPosition(0, backgroundSprite1.getPosition().y - 533);
+            }
+
+            player->y = 200;
+            points = static_cast<int>(cumulativeShift);
         }
 
-        // Draw everything
+        // Check for game over
+        if (player->y > player->windowHeight) {
+            gameOver = true;
+            std::stringstream gameOverStream;
+            gameOverStream << "Game Over!\nFinal Score: " << points << "\nCoins Collected: " << coinsCollected;
+            gameOverText.setString(gameOverStream.str());
+            FloatRect textRect = gameOverText.getLocalBounds();
+            gameOverText.setOrigin(textRect.width / 2, textRect.height / 2);
+            gameOverText.setPosition(app.getSize().x / 2, app.getSize().y / 2);
+        }
+
+        // Update score and coin text
+        std::stringstream ss;
+        ss << "Score: " << points;
+        scoreText.setString(ss.str());
+
+        std::stringstream coinStream;
+        coinStream << "Coins: " << coinsCollected;
+        coinText.setString(coinStream.str());
+    }
+
+    void render() {
         app.clear();
+
         if (!gameOver) {
-            // Draw both background sprites to create the looping effect
             app.draw(backgroundSprite1);
             app.draw(backgroundSprite2);
 
             for (auto& obj : gameObjects) {
-                obj->draw(app);  // Polymorphic call to draw method
+                obj->draw(app);
             }
 
-            // Draw the score and coin count
             app.draw(scoreText);
             app.draw(coinText);
         }
         else {
-            // Draw the final score and coins collected after game over
             app.draw(gameOverText);
         }
 
         app.display();
     }
+};
 
+int main() {
+    Game game;
+    game.run();
     return 0;
 }
