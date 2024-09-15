@@ -72,6 +72,11 @@ public:
             playerBounds.top + playerBounds.height < platformBounds.top + 14);
     }
 
+    bool isCollectingCoin(FloatRect coinBounds) {
+        FloatRect playerBounds = sprite.getGlobalBounds();
+        return playerBounds.intersects(coinBounds);
+    }
+
     void bounce() {
         dy = -10;  // Bounce upwards
     }
@@ -111,11 +116,46 @@ public:
     }
 };
 
+// Derived class for the coin
+class Coin : public GameObject {
+public:
+    Sprite sprite;
+    Texture texture;
+    int x, y;
+
+    Coin() {
+        texture.loadFromFile("C:/Users/sosko/Downloads/coin.png");
+        sprite.setTexture(texture);
+        sprite.setScale(0.1f, 0.1f);  // Scale down the coin to make it smaller
+        x = rand() % 400;
+        y = rand() % 533;
+    }
+
+    void update() override {
+        // Coins don't move by themselves, but can be respawned when collected
+    }
+
+    void draw(RenderWindow& window) override {
+        sprite.setPosition(x, y);
+        window.draw(sprite);
+    }
+
+    // Respawn the coin at the given platform's position
+    void respawnAtPlatform(int platformX, int platformY) {
+        x = platformX + rand() % 50 - 25;  // Randomize slightly around the platform's X position
+        y = platformY - 30;  // Spawn above the platform
+    }
+
+    FloatRect getBounds() const {
+        return sprite.getGlobalBounds();
+    }
+};
+
 int main()
 {
     srand(time(0));
 
-    RenderWindow app(VideoMode(400, 533), "Doodle Jump with Points System");
+    RenderWindow app(VideoMode(400, 533), "Doodle Jump with Points and Coins");
     app.setFramerateLimit(60);
 
     // Load background texture
@@ -127,7 +167,7 @@ int main()
     Sprite backgroundSprite2(backgroundTexture);
     backgroundSprite2.setPosition(0, -533);  // Position the second background above the first
 
-    // Load font for displaying the score
+    // Load font for displaying the score and coin count
     Font font;
     if (!font.loadFromFile("C:/Windows/Fonts/Arial.ttf")) {
         return -1;  // Handle font loading error
@@ -140,32 +180,53 @@ int main()
     scoreText.setFillColor(Color::Black);  // Set text color to black
     scoreText.setPosition(10, 10);  // Position the score text at the top-left corner
 
-    // Create game over text to display final score
+    // Create a text object for displaying the coin count
+    Text coinText;
+    coinText.setFont(font);
+    coinText.setCharacterSize(24);
+    coinText.setFillColor(Color::Black);  // Set text color to black
+    coinText.setPosition(10, 40);  // Position the coin count text below the score
+
+    // Create game over text to display final score and coins
     Text gameOverText;
     gameOverText.setFont(font);
     gameOverText.setCharacterSize(24);  // Reduced size so the full message fits
     gameOverText.setFillColor(Color::Red);
 
     int points = 0;  // Track the player's points (based on how high they go)
+    int coinsCollected = 0;  // Track the number of collected coins
     bool gameOver = false;  // Flag to track if the game is over
 
     float cumulativeShift = 0;  // Track how much the camera (world) has shifted
+    int platformCounter = 0;  // Counter to track platforms and spawn coins every 20th platform
 
-    // Container for all game objects (player and platforms)
+    // Container for all game objects (player, platforms, coins)
     std::vector<std::unique_ptr<GameObject>> gameObjects;
+
+    // Start player at a fixed Y position
+    int playerStartY = 400;
+    Player* player = new Player(playerStartY);  // Spawn player at a fixed height
+    gameObjects.push_back(std::unique_ptr<GameObject>(player));
 
     // Add platforms to the game object container
     std::vector<Platform*> platforms;  // Keep track of platforms for collision detection
-    for (int i = 0; i < 10; i++) {
+
+    // Place the first platform just below the player
+    Platform* firstPlatform = new Platform();
+    firstPlatform->y = playerStartY + 50;  // 50 pixels below the player
+    platforms.push_back(firstPlatform);
+    gameObjects.push_back(std::unique_ptr<GameObject>(firstPlatform));
+
+    // Add the rest of the platforms randomly
+    for (int i = 1; i < 10; i++) {
         Platform* platform = new Platform();
         gameObjects.push_back(std::unique_ptr<GameObject>(platform));
         platforms.push_back(platform);
     }
 
-    // Start player slightly above the first platform
-    int firstPlatformY = platforms[0]->y;  // Y position of the first platform
-    Player* player = new Player(firstPlatformY - 50);  // Spawn player slightly above the first platform
-    gameObjects.push_back(std::unique_ptr<GameObject>(player));
+    // Add a coin to the game
+    Coin* coin = new Coin();
+    gameObjects.push_back(std::unique_ptr<GameObject>(coin));
 
     while (app.isOpen())
     {
@@ -188,17 +249,35 @@ int main()
                 }
             }
 
+            // Check if player collects the coin
+            if (player->isCollectingCoin(coin->getBounds())) {
+                coinsCollected++;  // Increment the coin count
+                coin->respawnAtPlatform(rand() % 400, rand() % 533);  // Respawn the coin after collection
+            }
+
             // Simulate camera movement and platform respawn
             if (player->y < 200) {
-                // Shift the platforms down as the player goes up, simulating the camera following the player
+                // Shift the platforms and coins down as the player goes up
                 float shiftAmount = 200 - player->y;
                 cumulativeShift += shiftAmount;  // Track the total camera shift
 
                 for (auto& platform : platforms) {
                     platform->y += shiftAmount;  // Move platforms down when player moves up
                     if (platform->y > 533) {
+                        platformCounter++;  // Increment the platform counter
                         platform->respawn();  // Respawn platform if it moves off the bottom
+
+                        // Every 20th platform spawns a coin
+                        if (platformCounter % 20 == 0) {
+                            coin->respawnAtPlatform(platform->x, platform->y);
+                        }
                     }
+                }
+
+                // Move the coin as well
+                coin->y += shiftAmount;
+                if (coin->y > 533) {
+                    coin->respawnAtPlatform(rand() % 400, rand() % 533);  // Respawn the coin if it moves off the bottom
                 }
 
                 // Move the backgrounds down to simulate endless scrolling
@@ -222,8 +301,10 @@ int main()
             // Check if player has fallen off the screen
             if (player->y > player->windowHeight) {
                 gameOver = true;  // Set game over flag to true
+
+                // Display final score and coins collected in the game-over text
                 std::stringstream gameOverStream;
-                gameOverStream << "Game Over! Final Score: " << points;
+                gameOverStream << "Game Over!\nFinal Score: " << points << "\nCoins Collected: " << coinsCollected;
                 gameOverText.setString(gameOverStream.str());
 
                 // Center the game over text
@@ -232,10 +313,14 @@ int main()
                 gameOverText.setPosition(app.getSize().x / 2, app.getSize().y / 2);
             }
 
-            // Update the score text
+            // Update the score and coin count text
             std::stringstream ss;
             ss << "Score: " << points;
             scoreText.setString(ss.str());
+
+            std::stringstream coinStream;
+            coinStream << "Coins: " << coinsCollected;
+            coinText.setString(coinStream.str());
         }
 
         // Draw everything
@@ -249,11 +334,12 @@ int main()
                 obj->draw(app);  // Polymorphic call to draw method
             }
 
-            // Draw the score
+            // Draw the score and coin count
             app.draw(scoreText);
+            app.draw(coinText);
         }
         else {
-            // Draw the final score after game over
+            // Draw the final score and coins collected after game over
             app.draw(gameOverText);
         }
 
