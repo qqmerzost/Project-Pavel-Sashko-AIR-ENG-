@@ -1,19 +1,19 @@
 #include<SFML/Graphics.hpp>
 #include<time.h>
 #include<vector>
-#include<memory> 
+#include<memory> // For smart pointers
 
 using namespace sf;
 
-// Base class for all game objects 
+// Base class for all game objects (using polymorphism)
 class GameObject {
 public:
-    virtual void draw(RenderWindow& window) = 0;  
-    virtual void update() = 0;  
-    virtual ~GameObject() {}  
+    virtual void draw(RenderWindow& window) = 0;  // Pure virtual function for drawing
+    virtual void update() = 0;  // Pure virtual function for updating
+    virtual ~GameObject() {}  // Virtual destructor for proper cleanup of derived classes
 };
 
-// Class for the player
+// Derived class for the player
 class Player : public GameObject {
 public:
     Sprite sprite;
@@ -37,8 +37,8 @@ public:
         if (Keyboard::isKeyPressed(Keyboard::Right)) x += 3;
         if (Keyboard::isKeyPressed(Keyboard::Left)) x -= 3;
 
-        // Gravity
-        dy += 0.2f;  
+        // Apply gravity
+        dy += 0.2f;  // Gravity makes the player fall
         y += dy;
 
         // Wrap around screen horizontally
@@ -47,7 +47,7 @@ public:
 
         // Reset if player falls below screen
         if (y > windowHeight) {
-            y = 100;  
+            y = 100;  // Reset player
             dy = 0;
         }
     }
@@ -61,7 +61,7 @@ public:
     bool isOnPlatform(FloatRect platformBounds) {
         FloatRect playerBounds = sprite.getGlobalBounds();
 
-        
+        // Only check collision when the player is falling downwards (dy > 0)
         return (dy > 0 &&
             playerBounds.left + playerBounds.width > platformBounds.left &&
             playerBounds.left < platformBounds.left + platformBounds.width &&
@@ -74,7 +74,7 @@ public:
     }
 };
 
-// Class for the platform
+// Derived class for the platform
 class Platform : public GameObject {
 public:
     Sprite sprite;
@@ -118,9 +118,13 @@ int main()
     // Load background texture
     Texture backgroundTexture;
     backgroundTexture.loadFromFile("C:/Users/sosko/Downloads/background.png");
-    Sprite backgroundSprite(backgroundTexture);
 
-    // Container for all game objects (player and platforms)
+    // Create two background sprites to create the endless scrolling effect
+    Sprite backgroundSprite1(backgroundTexture);
+    Sprite backgroundSprite2(backgroundTexture);
+    backgroundSprite2.setPosition(0, -533);  // Position the second background above the first
+
+    
     std::vector<std::unique_ptr<GameObject>> gameObjects;
 
     // Add player to the game object container
@@ -128,7 +132,7 @@ int main()
     gameObjects.push_back(std::unique_ptr<GameObject>(player));
 
     // Add platforms to the game object container
-    std::vector<Platform*> platforms;  /
+    std::vector<Platform*> platforms;  
     for (int i = 0; i < 10; i++) {
         Platform* platform = new Platform();
         gameObjects.push_back(std::unique_ptr<GameObject>(platform));
@@ -143,9 +147,9 @@ int main()
                 app.close();
         }
 
-        
+        // Update all game objects
         for (auto& obj : gameObjects) {
-            obj->update();  
+            obj->update();  // Polymorphic call to update method
         }
 
         // Check for player-platform collisions and make the player bounce
@@ -155,7 +159,7 @@ int main()
             }
         }
 
-        // Camera movement and platform respawn
+        // Simulate camera movement and platform respawn
         if (player->y < 200) {
             // Shift the platforms down as the player goes up, simulating the camera following the player
             float shiftAmount = 200 - player->y;
@@ -165,13 +169,28 @@ int main()
                     platform->respawn();  
                 }
             }
-            backgroundSprite.setPosition(0, backgroundSprite.getPosition().y + shiftAmount);  // Move background down
+
+            // Move the backgrounds down to simulate endless scrolling
+            backgroundSprite1.move(0, shiftAmount);
+            backgroundSprite2.move(0, shiftAmount);
+
+            // If a background moves completely off-screen, reposition it above the other
+            if (backgroundSprite1.getPosition().y >= 533) {
+                backgroundSprite1.setPosition(0, backgroundSprite2.getPosition().y - 533);
+            }
+            if (backgroundSprite2.getPosition().y >= 533) {
+                backgroundSprite2.setPosition(0, backgroundSprite1.getPosition().y - 533);
+            }
+
             player->y = 200;  // Keep player at fixed camera height while the world moves down
         }
 
         // Draw everything
         app.clear();
-        app.draw(backgroundSprite);  // Draw background
+        // Draw both background sprites to create the looping effect
+        app.draw(backgroundSprite1);
+        app.draw(backgroundSprite2);
+
         for (auto& obj : gameObjects) {
             obj->draw(app);  // Polymorphic call to draw method
         }
